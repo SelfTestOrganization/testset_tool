@@ -1,3 +1,4 @@
+import collections
 import logging
 import os
 
@@ -79,6 +80,34 @@ class Question(object):
             print(f"            {answer}) {value}")
 
 
+class QuestionsDict(collections.OrderedDict):
+    """Lazily load questions."""
+
+    def __init__(self, dirname):
+        self._dirname = dirname
+        self._keys_loaded = False
+
+    def __getitem__(self, key):
+        if super().__getitem__(key) is None:
+            question = Question(os.path.join(self._dirname, key))
+            super().__setitem__(key, question)
+        return super().__getitem__(key)
+
+    def keys(self):
+        if not self._keys_loaded:
+            for item in os.listdir(self._dirname):
+                if os.path.isfile(os.path.join(self._dirname, item)) \
+                   and (item.endswith('.yaml') or item.endswith('.yml')) \
+                   and item != 'metadata.yaml':
+                    super().__setitem__(item, None)
+            self._keys_loaded = True
+        return super().keys()
+
+    def values(self):
+        for key in self.keys():
+            yield self.__getitem__(key)
+
+
 class Area(object):
     """Represent testset area as an object."""
 
@@ -88,21 +117,12 @@ class Area(object):
         self._name = os.path.basename(dirname)
 
         self._questions_to_ask = None
-        self._questions = None
+        self.questions = QuestionsDict(self._dirname)
 
     def load_meta(self):
         with open(os.path.join(self._dirname, 'metadata.yaml'), 'r') as fp:
             metadata = yaml.load(fp, Loader=yaml.Loader)
             self._questions_to_ask = int(metadata['questions_to_ask'])
-
-    def load_questions(self):
-        self._questions = []
-        for item in os.listdir(self._dirname):
-            if os.path.isfile(os.path.join(self._dirname, item)) \
-               and (item.endswith('.yaml') or item.endswith('.yml')) \
-               and item != 'metadata.yaml':
-                question = Question(os.path.join(self._dirname, item))
-                self._questions.append(question)
 
     def __gt__(self, other):
         return self._dirname > other._dirname
@@ -120,27 +140,47 @@ class Area(object):
             self.load_meta()
         return self._questions_to_ask
 
-    @property
-    def questions(self):
-        if self._questions is None:
-            self.load_questions()
-        return self._questions
-
     def lint(self):
         logging.debug(f"Linting area from {self._dirname}")
         assert len(self.name) > 0
         assert self.questions_to_ask > 0
-        assert self.questions_to_ask <= len(self.questions)
+        assert self.questions_to_ask <= len(self.questions.keys())
 
-        for question in self.questions:
+        for question in self.questions.values():
             question.lint()
 
     def show(self):
         print(f"  - Area: {self.name}")
         print(f"    Questions to ask: {self.questions_to_ask}")
         print("    Questions:")
-        for question in self.questions:
+        for question in self.questions.values():
             question.show()
+
+
+class AreasDict(collections.OrderedDict):
+    """Lazily load areas."""
+
+    def __init__(self, dirname):
+        self._dirname = dirname
+        self._keys_loaded = False
+
+    def __getitem__(self, key):
+        if super().__getitem__(key) is None:
+            area = Area(os.path.join(self._dirname, key))
+            super().__setitem__(key, area)
+        return super().__getitem__(key)
+
+    def keys(self):
+        if not self._keys_loaded:
+            for item in os.listdir(self._dirname):
+                if os.path.exists(os.path.join(self._dirname, item, 'metadata.yaml')):
+                    super().__setitem__(os.path.basename(item), None)
+            self._keys_loaded = True
+        return super().keys()
+
+    def values(self):
+        for key in self.keys():
+            yield self.__getitem__(key)
 
 
 class TestSet(object):
@@ -152,7 +192,7 @@ class TestSet(object):
 
         self._name = None
         self._version = None
-        self._areas = None
+        self.areas = AreasDict(self._dirname)
 
     def __repr__(self):
         return f"<TestSet({self._dirname}, {self.version})>"
@@ -169,36 +209,23 @@ class TestSet(object):
             self.load_meta()
         return self._version
 
-    @property
-    def areas(self):
-        if self._areas is None:
-            self.load_areas()
-        return self._areas
-
     def load_meta(self):
         with open(os.path.join(self._dirname, 'metadata.yaml'), 'r') as fp:
             metadata = yaml.load(fp, Loader=yaml.Loader)
             self._name = metadata['name']
             self._version = int(metadata['version'])
 
-    def load_areas(self):
-        self._areas = []
-        for item in os.listdir(self._dirname):
-            if os.path.exists(os.path.join(self._dirname, item, 'metadata.yaml')):
-                area = Area(os.path.join(self._dirname, item))
-                self._areas.append(area)
-        self._areas.sort()
-
     def lint(self):
         logging.debug(f"Linting testset from {self._dirname}")
         assert self.version > 0
 
-        for area in self.areas:
+        assert len(self.areas.keys()) > 0
+        for area in self.areas.values():
             area.lint()
 
     def show(self):
         print(f"Name: {self.name}")
         print(f"Version: {self.version}")
         print("Areas:")
-        for area in self.areas:
+        for area in self.areas.values():
             area.show()
