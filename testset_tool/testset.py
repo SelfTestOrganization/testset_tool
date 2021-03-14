@@ -97,6 +97,7 @@ class Question(object):
 
     @classmethod
     def convert(cls, from_dir, to_file):
+        """Convert old-formated testset area question and dump to new file."""
         logging.info(f"Converting question from {from_dir} to {to_file}")
         self = cls(to_file)
 
@@ -154,6 +155,7 @@ class QuestionsDict(collections.OrderedDict):
 
     @classmethod
     def convert(cls, from_dir, to_dir):
+        """Dispatch conversion of questions from old to new format."""
         self = cls(to_dir)
 
         for item in os.listdir(from_dir):
@@ -172,7 +174,6 @@ class QuestionsDict(collections.OrderedDict):
         self._keys_loaded = True
 
         return self
-
 
 
 class Area(object):
@@ -203,7 +204,7 @@ class Area(object):
         return self._dirname > other._dirname
 
     def __repr__(self):
-        return f"<Area({self.basename}, {self.questions_to_ask})>"
+        return f"<Area({self._dirname}, {self.questions_to_ask})>"
 
     @property
     def name(self):
@@ -240,6 +241,7 @@ class Area(object):
 
     @classmethod
     def convert(cls, from_dir, to_dir):
+        """Convert old-formated testset area and dump to new directory."""
         logging.info(f"Converting area from {from_dir} to {to_dir}")
         self = cls(to_dir)
 
@@ -280,6 +282,7 @@ class AreasDict(collections.OrderedDict):
 
     @classmethod
     def convert(cls, from_dir, to_dir):
+        """Dispatch conversion of areas from old to new format."""
         self = cls(to_dir)
 
         for item in os.listdir(from_dir):

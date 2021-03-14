@@ -7,6 +7,7 @@ import testset
 
 
 def convert(from_dir, to_dir):
+    """Check source and target dirs and start a conversion."""
     logging.info(f"Converting {from_dir} to {to_dir}")
 
     if not os.path.exists(to_dir):
