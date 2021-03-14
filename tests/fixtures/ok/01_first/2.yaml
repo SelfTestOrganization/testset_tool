@@ -1,0 +1,7 @@
+answers:
+  a: something
+  b: anything
+correct: a
+question: <p>From following possibilities choose <strong>first</strong> possibility.</p>
+timeout: 30
+type: abc

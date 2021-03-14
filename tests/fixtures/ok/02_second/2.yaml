@@ -1,0 +1,8 @@
+answers:
+  a: aaa
+  b: bbb
+  c: ccc
+correct: a
+question: <p>Choose <strong>aaa</strong> possibility.</p>
+timeout: 30
+type: abc
