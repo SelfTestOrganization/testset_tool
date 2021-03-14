@@ -1,4 +1,5 @@
 import collections
+import configparser
 import logging
 import os
 
@@ -28,6 +29,17 @@ class Question(object):
             self._question = metadata['question']
             self._answers = metadata['answers']
             self._correct = metadata['correct']
+
+    def dump_meta(self):
+        with open(self._filename, 'w') as fp:
+            data = {
+                "type": self.type,
+                "timeout": self.timeout,
+                "question": self.question,
+                "answers": self.answers,
+                "correct": self.correct,
+            }
+            yaml.dump(data, fp)
 
     def __repr__(self):
         return f"<Question({self.filename}, {self.type}, {self.timeout})>"
@@ -79,6 +91,39 @@ class Question(object):
         for answer, value in self.answers.items():
             print(f"            {answer}) {value}")
 
+    def dump(self):
+        logging.debug(f"Dumping question to {self._filename}")
+        self.dump_meta()
+
+    @classmethod
+    def convert(cls, from_dir, to_file):
+        logging.info(f"Converting question from {from_dir} to {to_file}")
+        self = cls(to_file)
+
+        config = configparser.ConfigParser()
+        config.read(os.path.join(from_dir, "config"))
+        assert "question" in config
+
+        self._type = config["question"]["type"]
+        if self._type != "abc":
+            raise Exception(f"Sorry, I do not know how to handle question with type {self._type}. Skipping it")
+        self._timeout = int(config["question"]["timeout"])
+        self._question = config["question"]["question"]
+        if self._question.startswith("@"):
+            with open(os.path.join(from_dir, self._question[1:])) as fp:
+                self._question = fp.read().strip()
+        self._answers = {}
+        with open(os.path.join(from_dir, config["question"]["answers"][1:])) as fp:
+            for line in fp:
+                answer_id = line[0]
+                answer_text = line[2:].strip()
+                self._answers[answer_id] = answer_text
+        self._correct = config["question"]["correct"]
+
+        self.dump()
+
+        return self
+
 
 class QuestionsDict(collections.OrderedDict):
     """Lazily load questions."""
@@ -107,6 +152,28 @@ class QuestionsDict(collections.OrderedDict):
         for key in self.keys():
             yield self.__getitem__(key)
 
+    @classmethod
+    def convert(cls, from_dir, to_dir):
+        self = cls(to_dir)
+
+        for item in os.listdir(from_dir):
+            if os.path.exists(os.path.join(from_dir, item, 'config')):
+                question_from = os.path.join(from_dir, item)
+                question_to = os.path.join(to_dir, item + '.yaml')
+
+                try:
+                    question = Question.convert(question_from, question_to)
+                except Exception as e:
+                    logging.warning(e)
+                    continue
+
+                self.__setitem__(os.path.basename(question_to), question)
+
+        self._keys_loaded = True
+
+        return self
+
+
 
 class Area(object):
     """Represent testset area as an object."""
@@ -114,15 +181,23 @@ class Area(object):
     def __init__(self, dirname):
         logging.info(f"Creating area from {dirname}")
         self._dirname = dirname
+        self._meta_path = os.path.join(self._dirname, 'metadata.yaml')
         self._name = os.path.basename(dirname)
 
         self._questions_to_ask = None
         self.questions = QuestionsDict(self._dirname)
 
     def load_meta(self):
-        with open(os.path.join(self._dirname, 'metadata.yaml'), 'r') as fp:
+        with open(self._meta_path, 'r') as fp:
             metadata = yaml.load(fp, Loader=yaml.Loader)
             self._questions_to_ask = int(metadata['questions_to_ask'])
+
+    def dump_meta(self):
+        with open(self._meta_path, 'w') as fp:
+            data = {
+                "questions_to_ask": self._questions_to_ask,
+            }
+            yaml.dump(data, fp)
 
     def __gt__(self, other):
         return self._dirname > other._dirname
@@ -156,6 +231,27 @@ class Area(object):
         for question in self.questions.values():
             question.show()
 
+    def dump(self):
+        logging.debug(f"Dumping area to {self._dirname}")
+        self.dump_meta()
+
+        for question in self.questions.values():
+            question.dump()
+
+    @classmethod
+    def convert(cls, from_dir, to_dir):
+        logging.info(f"Converting area from {from_dir} to {to_dir}")
+        self = cls(to_dir)
+
+        with open(os.path.join(from_dir, 'questions_to_test.txt')) as fp:
+            self._questions_to_ask = int(fp.read().strip())
+
+        self.questions = QuestionsDict.convert(from_dir, to_dir)
+
+        self.dump()
+
+        return self
+
 
 class AreasDict(collections.OrderedDict):
     """Lazily load areas."""
@@ -182,6 +278,24 @@ class AreasDict(collections.OrderedDict):
         for key in self.keys():
             yield self.__getitem__(key)
 
+    @classmethod
+    def convert(cls, from_dir, to_dir):
+        self = cls(to_dir)
+
+        for item in os.listdir(from_dir):
+            if os.path.exists(os.path.join(from_dir, item, 'questions_to_test.txt')):
+                area_from = os.path.join(from_dir, item)
+                area_to = os.path.join(to_dir, item)
+
+                os.mkdir(area_to)
+
+                area = Area.convert(area_from, area_to)
+                self.__setitem__(os.path.basename(item), area)
+
+        self._keys_loaded = True
+
+        return self
+
 
 class TestSet(object):
     """Represent testset as an object."""
@@ -189,6 +303,7 @@ class TestSet(object):
     def __init__(self, dirname):
         logging.info(f"Creating testset from {dirname}")
         self._dirname = dirname
+        self._meta_path = os.path.join(self._dirname, 'metadata.yaml')
 
         self._name = None
         self._version = None
@@ -210,10 +325,18 @@ class TestSet(object):
         return self._version
 
     def load_meta(self):
-        with open(os.path.join(self._dirname, 'metadata.yaml'), 'r') as fp:
+        with open(self._meta_path, 'r') as fp:
             metadata = yaml.load(fp, Loader=yaml.Loader)
             self._name = metadata['name']
             self._version = int(metadata['version'])
+
+    def dump_meta(self):
+        data = {
+            "name": self.name,
+            "version": self.version,
+        }
+        with open(self._meta_path, 'w') as fp:
+            yaml.dump(data, fp)
 
     def lint(self):
         logging.debug(f"Linting testset from {self._dirname}")
@@ -229,3 +352,26 @@ class TestSet(object):
         print("Areas:")
         for area in self.areas.values():
             area.show()
+
+    def dump(self):
+        logging.debug(f"Dumping testset to {self._dirname}")
+        self.dump_meta()
+
+        for area in self.areas.values():
+            area.dump()
+
+    @classmethod
+    def convert(cls, from_dir, to_dir):
+        """Convert old-formated testset and dump to new directory."""
+        logging.info(f"Converting testset from {from_dir} to {to_dir}")
+        self = cls(to_dir)
+
+        with open(os.path.join(from_dir, "description")) as fp:
+            self._name = fp.read().strip()
+        self._version = 1
+
+        self.areas = AreasDict.convert(from_dir, to_dir)
+
+        self.dump()
+
+        return self
