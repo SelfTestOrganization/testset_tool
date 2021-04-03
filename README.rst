@@ -28,7 +28,7 @@ Usage
 
 To use TestSet tool in a project::
 
-    import testset_tool
+    import testset_tool.testset
     ts = testset.TestSet('path/to/your/testset/')
     print(ts)
     for area in ts.areas:
