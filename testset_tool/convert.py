@@ -1,7 +1,7 @@
 import logging
 import os
 
-import testset
+from testset_tool import testset
 
 """Convert old format of testsets to a new one."""
 

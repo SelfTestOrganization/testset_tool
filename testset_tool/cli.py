@@ -3,8 +3,8 @@ import argparse
 import logging
 import sys
 
-import convert
-import testset
+from testset_tool import convert
+from testset_tool import testset
 
 
 def main():

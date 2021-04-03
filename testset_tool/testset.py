@@ -11,10 +11,12 @@ import yaml
 class Question(object):
     """Represent testset area question as an object."""
 
-    def __init__(self, filename):
+    def __init__(self, filename, area):
         logging.info(f"Creating question from {filename}")
-        self._filename = filename
+        self._meta_path = filename
+        self.area = area
 
+        self._name = None
         self._type = None
         self._timeout = None
         self._question = None
@@ -22,8 +24,9 @@ class Question(object):
         self._correct = None
 
     def load_meta(self):
-        with open(self._filename, 'r') as fp:
+        with open(self._meta_path, 'r') as fp:
             metadata = yaml.load(fp, Loader=yaml.Loader)
+            self._name = os.path.basename(self._meta_path).split('.')[0]
             self._type = metadata['type']
             self._timeout = int(metadata['timeout'])
             self._question = metadata['question']
@@ -31,7 +34,7 @@ class Question(object):
             self._correct = metadata['correct']
 
     def dump_meta(self):
-        with open(self._filename, 'w') as fp:
+        with open(self._meta_path, 'w') as fp:
             data = {
                 "type": self.type,
                 "timeout": self.timeout,
@@ -42,7 +45,17 @@ class Question(object):
             yaml.dump(data, fp)
 
     def __repr__(self):
-        return f"<Question({self._filename}, {self.type}, {self.timeout})>"
+        return f"<Question({self.name}, {self.type}, {self.timeout})>"
+
+    @property
+    def whoami(self):
+        return f"{self.area.whoami}/{self.name}"
+
+    @property
+    def name(self):
+        if self._name is None:
+            self.load_meta()
+        return self._name
 
     @property
     def type(self):
@@ -75,7 +88,7 @@ class Question(object):
         return self._correct
 
     def lint(self):
-        logging.debug(f"Linting question from {self._filename}")
+        logging.debug(f"Linting question from {self._meta_path}")
         assert self.type == 'abc'
         assert self.timeout > 0
         assert isinstance(self.question, str) and len(self.question) > 0
@@ -92,7 +105,7 @@ class Question(object):
             print(f"            {answer}) {value}")
 
     def dump(self):
-        logging.debug(f"Dumping question to {self._filename}")
+        logging.debug(f"Dumping question to {self._meta_path}")
         self.dump_meta()
 
     @classmethod
@@ -129,13 +142,15 @@ class Question(object):
 class QuestionsDict(collections.OrderedDict):
     """Lazily load questions."""
 
-    def __init__(self, dirname):
+    def __init__(self, dirname, area):
         self._dirname = dirname
+        self._area = area
         self._keys_loaded = False
 
     def __getitem__(self, key):
-        if super().__getitem__(key) is None:
-            question = Question(os.path.join(self._dirname, key))
+        if key not in super().keys() or super().__getitem__(key) is None:
+            p = os.path.join(self._dirname, key + '.yaml')
+            question = Question(p, self._area)
             super().__setitem__(key, question)
         return super().__getitem__(key)
 
@@ -143,9 +158,10 @@ class QuestionsDict(collections.OrderedDict):
         if not self._keys_loaded:
             for item in os.listdir(self._dirname):
                 if os.path.isfile(os.path.join(self._dirname, item)) \
-                   and (item.endswith('.yaml') or item.endswith('.yml')) \
+                   and item.endswith('.yaml') \
                    and item != 'metadata.yaml':
-                    super().__setitem__(item, None)
+                    key = item.split('.')[0]
+                    super().__setitem__(key, None)
             self._keys_loaded = True
         return super().keys()
 
@@ -179,18 +195,20 @@ class QuestionsDict(collections.OrderedDict):
 class Area(object):
     """Represent testset area as an object."""
 
-    def __init__(self, dirname):
+    def __init__(self, dirname, testset):
         logging.info(f"Creating area from {dirname}")
         self._dirname = dirname
+        self.testset = testset
         self._meta_path = os.path.join(self._dirname, 'metadata.yaml')
-        self._name = os.path.basename(dirname)
 
+        self._name = None
         self._questions_to_ask = None
-        self.questions = QuestionsDict(self._dirname)
+        self.questions = QuestionsDict(self._dirname, self)
 
     def load_meta(self):
         with open(self._meta_path, 'r') as fp:
             metadata = yaml.load(fp, Loader=yaml.Loader)
+            self._name = os.path.basename(self._dirname)
             self._questions_to_ask = int(metadata['questions_to_ask'])
 
     def dump_meta(self):
@@ -207,7 +225,13 @@ class Area(object):
         return f"<Area({self._dirname}, {self.questions_to_ask})>"
 
     @property
+    def whoami(self):
+        return f"{self.testset.whoami}/{self.name}"
+
+    @property
     def name(self):
+        if self._name is None:
+            self.load_meta()
         return self._name
 
     @property
@@ -258,13 +282,14 @@ class Area(object):
 class AreasDict(collections.OrderedDict):
     """Lazily load areas."""
 
-    def __init__(self, dirname):
+    def __init__(self, dirname, testset):
         self._dirname = dirname
+        self._testset = testset
         self._keys_loaded = False
 
     def __getitem__(self, key):
-        if super().__getitem__(key) is None:
-            area = Area(os.path.join(self._dirname, key))
+        if key not in super().keys() or super().__getitem__(key) == None:
+            area = Area(os.path.join(self._dirname, key), self._testset)
             super().__setitem__(key, area)
         return super().__getitem__(key)
 
@@ -309,17 +334,28 @@ class TestSet(object):
         self._meta_path = os.path.join(self._dirname, 'metadata.yaml')
 
         self._name = None
+        self._description = None
         self._version = None
-        self.areas = AreasDict(self._dirname)
+        self.areas = AreasDict(self._dirname, self)
 
     def __repr__(self):
         return f"<TestSet({self._dirname}, {self.version})>"
+
+    @property
+    def whoami(self):
+        return self.name
 
     @property
     def name(self):
         if self._name is None:
             self.load_meta()
         return self._name
+
+    @property
+    def description(self):
+        if self._description is None:
+            self.load_meta()
+        return self._description
 
     @property
     def version(self):
@@ -330,12 +366,13 @@ class TestSet(object):
     def load_meta(self):
         with open(self._meta_path, 'r') as fp:
             metadata = yaml.load(fp, Loader=yaml.Loader)
-            self._name = metadata['name']
+            self._name = os.path.basename(os.path.dirname(self._meta_path))
+            self._description = metadata['description']
             self._version = int(metadata['version'])
 
     def dump_meta(self):
         data = {
-            "name": self.name,
+            "description": self.description,
             "version": self.version,
         }
         with open(self._meta_path, 'w') as fp:
@@ -350,7 +387,7 @@ class TestSet(object):
             area.lint()
 
     def show(self):
-        print(f"Name: {self.name}")
+        print(f"Description: {self.description}")
         print(f"Version: {self.version}")
         print("Areas:")
         for area in self.areas.values():
