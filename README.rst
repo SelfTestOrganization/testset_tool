@@ -31,9 +31,9 @@ To use TestSet tool in a project::
     import testset_tool.testset
     ts = testset.TestSet('path/to/your/testset/')
     print(ts)
-    for area in ts.areas:
+    for area in ts.areas.values():
         print(area)
-        for question in area.questions:
+        for question in area.questions.values():
             print(question)
 
 To use command line tool to check if your testset is syntactically correct::

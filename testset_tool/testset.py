@@ -42,7 +42,7 @@ class Question(object):
             yaml.dump(data, fp)
 
     def __repr__(self):
-        return f"<Question({self.filename}, {self.type}, {self.timeout})>"
+        return f"<Question({self._filename}, {self.type}, {self.timeout})>"
 
     @property
     def type(self):
